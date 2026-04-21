@@ -1,217 +1,138 @@
 use anchor_lang::prelude::*;
-// ID del Solana Program, este espacio se llena automaticamente al haver el "build"
-declare_id!("");
 
-#[program] // Macro que convierte codigo de Rust a Solana. Apartir de aqui empieza tu codigo!
-pub mod biblioteca {
-    use super::*; // Importa todas los structs y enums definidos fuera del modulo
+// ID del programa
+declare_id!("zrHyeBt6Gk26bEqDrSahsmin7hciMTcNX172jJXiz3i");
 
-    //////////////////////////// Instruccion: Crear Biblioteca /////////////////////////////////////
-    /*
-    Permite la creacion de una PDA (Program Derived Adress), un tipo especial de cuenta en solana que permite prescindir 
-    del uso de llaves privadas para la firma de transacciones. 
+#[program]
+pub mod timechain_solana {
+    use super::*;
 
-    Esta cuenta contendra el objeto (struct) de tipo Biblioteca donde podremos almacenar los Libros. 
-    La creacion de la PDA depende de 3 cosas:
-        * Wallet address 
-        * Program ID 
-        * string representativo, regularmente relacionado con el nombre del proyecto
-    
-    La explicacion de esto continua en el struct NuevaBiblioteca
-
-    Parametros de entrada:
-        * nombre -> nombre de la biblioteca -> tipo string
-     */
-    pub fn crear_biblioteca(context: Context<NuevaBiblioteca>, nombre: String) -> Result<()> {
-        // "Context" siempre suele ir como primer parametro, ya que permite acceder al objeto o cuenta con el que queremos interactuar
-        // Dentro del context va al tipo de objeto o cuenta con el que deseamos interactuar. 
-        let owner_id = context.accounts.owner.key(); // Accedemos al wallet address del caller 
-        msg!("Owner id: {}", owner_id); // Print de verificacion
-
-        let libros: Vec<Libro> = Vec::new(); // Crea un vector vacio 
-
-        // Creamos un Struct de tipo biblioteca y lo guardamos directamente 
-        context.accounts.biblioteca.set_inner(Biblioteca { 
-            owner: owner_id,
-            nombre,
-            libros,
-        });
-        Ok(()) // Representa una transaccion exitosa 
+    // 1. CREATE (PDA): Inicializa la bitácora del freelancer
+    pub fn inicializar_tracker(ctx: Context<CrearTracker>, nombre_freelancer: String) -> Result<()> {
+        let tracker = &mut ctx.accounts.tracker;
+        tracker.owner = ctx.accounts.owner.key();
+        tracker.nombre_freelancer = nombre_freelancer;
+        tracker.registros = Vec::new();
+        
+        msg!("Time Tracker creado para el freelancer: {}", tracker.nombre_freelancer);
+        Ok(())
     }
 
-    //////////////////////////// Instruccion: Agregar Libro /////////////////////////////////////
-    /*
-    Agrega un libro al vector de libros ontenido en el struct Biblioteca. 
-    En este caso el contexto empleado es el struct NuevoLibro. Mientras que NuevaBiblioteca permite crear 
-    Instancias de una Biblioteca. NuevoLibro permite crear y modificar los valores relacionados a cualquier
-    struct de tipo Libro.
+    // 2. CREATE (Dato): Registra horas trabajadas en un proyecto (Por defecto no pagado)
+    pub fn registrar_horas(ctx: Context<GestionarRegistro>, proyecto: String, horas: u8) -> Result<()> {
+        let tracker = &mut ctx.accounts.tracker;
+        require!(tracker.owner == ctx.accounts.owner.key(), Errores::NoEresElOwner);
 
-    Parametros de entrada:
-        * nombre -> nombre del libro -> string
-        * paginas -> numero de paginas del libro -> u16
-     */ 
-    pub fn agregar_libro(context: Context<NuevoLibro>, nombre: String, paginas: u16) -> Result<()> {
-        require!( // Medida de seguridad para identificar que SOLO el owner de la biblioteca sea el que hace cambios en ella
-            context.accounts.biblioteca.owner == context.accounts.owner.key(), // Condicion, true -> continua, false -> error
-            Errores::NoEresElOwner // Codigo de error, ver enum Errores
-        ); 
-
-        let libro = Libro { // Creacion de un struct tipo Libro
-            nombre,
-            paginas,
-            disponible: true,
+        let nuevo_registro = RegistroSemanal {
+            proyecto,
+            horas_dedicadas: horas,
+            pagado: false, // Por defecto, el trabajo nuevo no está pagado
         };
 
-        context.accounts.biblioteca.libros.push(libro); // Agrega el Libro al vector de libros de Biblioteca
-
-        Ok(()) // Transaccion exitosa
+        tracker.registros.push(nuevo_registro);
+        msg!("Horas registradas con éxito.");
+        Ok(())
     }
 
-    //////////////////////////// Instruccion: Eliminar Libro /////////////////////////////////////
-    /*
-    Elimina un libro apartir de su nombre. Error si libro no existe, Error si vector vacio. 
+    // 3. UPDATE: Actualiza las horas o cambia el estado a pagado
+    pub fn editar_registro(ctx: Context<GestionarRegistro>, proyecto: String, nuevas_horas: u8, esta_pagado: bool) -> Result<()> {
+        let tracker = &mut ctx.accounts.tracker;
+        require!(tracker.owner == ctx.accounts.owner.key(), Errores::NoEresElOwner);
 
-    Parametros de entrada:
-        * nombre -> Nombre del libro -> string
-     */
-    pub fn eliminar_libro(context: Context<NuevoLibro>, nombre: String) -> Result<()> {
-        require!( // Medida de seguridad
-            context.accounts.biblioteca.owner == context.accounts.owner.key(),
-            Errores::NoEresElOwner
-        );
-
-        let libros = &mut context.accounts.biblioteca.libros; // Referencia mutable al vector de libros
-
-        for i in 0..libros.len() { // Se itera mediante el indice todo el contenido del vector en busca del libro a eliminar
-            if libros[i].nombre == nombre { // Si lo encuentra prodece a borrarlo mediante el metodo remove
-                libros.remove(i);
-                msg!("Libro {} eliminado!", nombre); // Mensaje de borrado exitoso
-                return Ok(()); // Transaccion exitosa
+        let lista = &mut tracker.registros;
+        for i in 0..lista.len() {
+            if lista[i].proyecto == proyecto {
+                lista[i].horas_dedicadas = nuevas_horas;
+                lista[i].pagado = esta_pagado;
+                
+                if esta_pagado {
+                    msg!("¡Genial! El proyecto '{}' ha sido marcado como PAGADO.", proyecto);
+                } else {
+                    msg!("Registro de '{}' actualizado.", proyecto);
+                }
+                return Ok(());
             }
         }
-        Err(Errores::LibroNoExiste.into()) // Transaccion fallida, nunca encontro el libro
+        Err(Errores::RegistroNoEncontrado.into())
     }
 
-    //////////////////////////// Instruccion: Ver Libros /////////////////////////////////////
-    /*
-    Muestra en el log de la transaccion el contenido completo del vector de libros de la Biblioteca
+    // 4. DELETE: Elimina un registro (ej. a final de mes para limpiar)
+    pub fn eliminar_registro(ctx: Context<GestionarRegistro>, proyecto: String) -> Result<()> {
+        let tracker = &mut ctx.accounts.tracker;
+        require!(tracker.owner == ctx.accounts.owner.key(), Errores::NoEresElOwner);
 
-    Parametros de entrada:
-        Ninguno
-     */
-    pub fn ver_libros(context: Context<NuevoLibro>) -> Result<()> {
-        require!( // Medida de seguridad 
-            context.accounts.biblioteca.owner == context.accounts.owner.key(),
-            Errores::NoEresElOwner
-        );
+        let lista = &mut tracker.registros;
+        let index = lista.iter().position(|r| r.proyecto == proyecto);
 
-        // :#? requiere que NuevoLibro tenga atributo Debug. Permite la visualizacion completa del vector en el log
-        msg!("La lista de libros actualmente es: {:#?}", context.accounts.biblioteca.libros); // Print en log
-        Ok(()) // Transaccion exitosa 
-    }
-
-    
-    //////////////////////////// Instruccion: Alternar Estado /////////////////////////////////////
-    /* 
-    Cambia el estado de disponible de false a true o de true a false.
-
-    Parametros de entrada:
-        * nombre -> Nombre del libro -> string
-     */
-    pub fn alternar_estado(context: Context<NuevoLibro>, nombre: String) -> Result<()> {
-        require!( // Medida de seguridad
-            context.accounts.biblioteca.owner == context.accounts.owner.key(),
-            Errores::NoEresElOwner
-        );
-
-        let libros = &mut context.accounts.biblioteca.libros; // Referencia mutable al vector de libros
-        for i in 0..libros.len() { // Se itera mediante el indice el vector de libros
-            let estado = libros[i].disponible;  // Se almacena el estado del vector actual
-
-            if libros[i].nombre == nombre { // Si ecuentra el nombre del libro procede a cambiar el valor del estado 
-                let nuevo_estado = !estado;
-                libros[i].disponible = nuevo_estado;
-                msg!("El libro: {} ahora tiene un valor de disponibilidad: {}", nombre, nuevo_estado); // log print de la nueva disponibilidad
-                return Ok(()); // Transaccion exitosa
-            }
+        if let Some(i) = index {
+            lista.remove(i);
+            msg!("Registro del proyecto '{}' eliminado.", proyecto);
+            Ok(())
+        } else {
+            Err(Errores::RegistroNoEncontrado.into())
         }
-
-        Err(Errores::LibroNoExiste.into()) // Transaccion fallida, libro no existe
     }
 
+    // 5. READ: Visualiza todos los registros
+    pub fn ver_registros(ctx: Context<GestionarRegistro>) -> Result<()> {
+        msg!("Freelancer: {}", ctx.accounts.tracker.nombre_freelancer);
+        msg!("Bitácora de Horas: {:#?}", ctx.accounts.tracker.registros);
+        Ok(())
+    }
 }
 
-/*
-Codigos de error
-Todos los codigos se almacenan en un enum con la siguiente estructura:
-#[msg("MENSAJE DE ERROR")] (dentro de las comillas)
-NombreDelError, (En camel case)
-*/
-#[error_code]
-pub enum Errores {
-    #[msg("Error, no eres el propietario de la biblioteca que deseas modificar")]
-    NoEresElOwner,
-    #[msg("Error, el libro con el que deseas interactuar no existe")]
-    LibroNoExiste,
-}
+// --- ESTRUCTURAS DE DATOS (ESTADO) ---
 
-#[account] // Especifica que el strcut es una cuenta que se almacenara en la blockchain
-#[derive(InitSpace)] // Genera la constante INIT_SPACE y determina el espacio de almacenamiento necesario 
-pub struct Biblioteca { // Define la Biblioteca
-    owner: Pubkey, // Pubkey es un formato de llave publica de 32 bytes 
-
-    #[max_len(60)] // Cantidad maxima de caracteres del string: nombre
-    nombre: String,
-
-    #[max_len(10)] // Tamaño maximo del vector libros 
-    libros: Vec<Libro>,
-}
-
-/*
-Struct interno o secundario (No es una cuenta). Se define por derive y cuenta con los siguientes atributos:
-    * AnchorSerialize -> Permite guardar el struct en la cuenta 
-    * AnchorDeserialize -> Permite leer su contenido desde la cuenta 
-    * Clone -> Para copiar su contenido o valores 
-    * InitSpace -> Calcula el tamaño necesario para ser almacenado en la blockchain
-    * PartialEq -> Para usar sus valores y compararlos con "=="
-    * Debug -> Para mostrarlo en log con ":?" o ":#?"
-*/
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, InitSpace, PartialEq, Debug)]
-pub struct Libro {
-    #[max_len(60)]
-    nombre: String,
-
-    // Los siguientes datos no rquieren de max_len porque ya estan definidos (numero de 16 bits y false o true)
-    paginas: u16, 
-
-    disponible: bool,
+pub struct RegistroSemanal {
+    #[max_len(30)]
+    pub proyecto: String,
+    pub horas_dedicadas: u8, // Max 255 horas, ideal para registros semanales/mensuales
+    pub pagado: bool,
 }
 
+#[account]
+#[derive(InitSpace)]
+pub struct GestorHoras {
+    pub owner: Pubkey,
+    #[max_len(40)]
+    pub nombre_freelancer: String,
+    #[max_len(15)] // Capacidad para gestionar hasta 15 proyectos concurrentes
+    pub registros: Vec<RegistroSemanal>,
+}
 
-// Creacion de los contextos para las instrucciones (funciones)
-#[derive(Accounts)] // Especifica que este struct describe las cuentas que se requieren para determinada instruccion
-pub struct NuevaBiblioteca<'info> { // contexto de la instruccion
-    #[account(mut)] 
-    pub owner: Signer<'info>, // Se define que el owner como el que pagara la transaccion, por eso es mut, para que cambie el balance de la cuenta
+// --- CONTEXTOS ---
+
+#[derive(Accounts)]
+pub struct CrearTracker<'info> {
+    #[account(mut)]
+    pub owner: Signer<'info>,
 
     #[account(
-        init, // Inidica que al llamar la instruccuion se creara una cuenta
-        // puede ser remplazado por "init_if_needed" para que solo se cree una vez por caller
-        payer = owner, // Se especifica que quien paga el llamado a la instruccion, en este caso llama la instruccion 
-        space = Biblioteca::INIT_SPACE + 8, // Se calcula el espacio requerido para almacenar el Solana Program On-Chain
-        seeds = [b"biblioteca", owner.key().as_ref()], // Se especifica que la cuenta es una PDA que depende de un string y el id del owner
-        bump // Metodo para determinar el el id de la biblioteca en base a lo anterior 
+        init,
+        payer = owner,
+        space = 8 + GestorHoras::INIT_SPACE,
+        seeds = [b"tracker", owner.key().as_ref()],
+        bump
     )]
-    pub biblioteca: Account<'info, Biblioteca>, // Se especifica que la cuenta creada (PDA) almacenara la biblioteca 
+    pub tracker: Account<'info, GestorHoras>,
 
-    pub system_program: Program<'info, System>, // Programa necesario para crear la cuenta 
+    pub system_program: Program<'info, System>,
 }
 
-// Contexto para la creacion y modificacion de libros 
-#[derive(Accounts)] // Especifica que este struct se requiere para todas las instrucciones relacionadas con la creacion o modificacion de Libro
-pub struct NuevoLibro<'info> {
-    pub owner: Signer<'info>, // El owner de la cuenta es quien paga la transaccion
+#[derive(Accounts)]
+pub struct GestionarRegistro<'info> {
+    pub owner: Signer<'info>,
+    #[account(mut)]
+    pub tracker: Account<'info, GestorHoras>,
+}
 
-    #[account(mut)] 
-    pub biblioteca: Account<'info, Biblioteca>, // Se marca biblioteca como mutable porque se modificara tanto el vector como los libros que contiene
+// --- ERRORES ---
+
+#[error_code]
+pub enum Errores {
+    #[msg("Acceso denegado: No eres el dueño de esta bitácora.")]
+    NoEresElOwner,
+    #[msg("El proyecto buscado no existe en tu bitácora.")]
+    RegistroNoEncontrado,
 }
