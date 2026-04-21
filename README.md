@@ -1,60 +1,37 @@
-# Biblioteca en Solana
+# TimeChain Solana - Registro de Horas Freelance ⏱️
 
-![banner](./images/banner-biblioteca.jpg)
+**TimeChain Solana** es una dApp (Aplicación Descentralizada) basada en contratos inteligentes que permite a desarrolladores independientes y freelancers registrar sus horas de trabajo directamente en la blockchain de Solana, garantizando transparencia y trazabilidad con sus clientes.
 
-CRUD básico de un Solana Program desarrollado con Rust y Anchor desde el Solana Playground. 
+## 🎯 Caso de Uso
+Llevar un control en hojas de cálculo tradicionales puede ser alterado o borrado. Al llevar el registro On-Chain mediante este programa:
+1. El freelancer tiene un registro inmutable de su tiempo dedicado.
+2. Se puede visualizar fácilmente qué proyectos están pendientes de pago y cuáles ya fueron liquidados.
+3. Se demuestra dominio en la persistencia de estados y manipulación de memoria con Anchor Framework.
 
-Puedes comenzar dándole Fork a este repositorio (abajo te explicamos como 👇), **hemos preparado un entorno de codespaces listo para que no tengas que instalar nada**, solo déjate llevar por la fluidez de los ejercicios y temas desarrollados especialmente para ti. 
+---
 
-Asegúrate de clonar este repositorio a tu cuenta usando el botón **`Fork`**.
+## 🛠️ Detalles Técnicos y Estructura
 
-![fork](./images/fork.png)
+El programa utiliza **Program Derived Addresses (PDAs)** para garantizar que cada freelancer tenga una bitácora única vinculada matemáticamente a su wallet (`[b"tracker", owner.key()]`).
 
-## Importando el proyecto 
+### Estructura de la PDA (`GestorHoras`)
+* **`owner`**: (Pubkey) La billetera que desplegó y controla la cuenta.
+* **`nombre_freelancer`**: (String) Nombre o alias del profesional.
+* **`registros`**: (Vector) Una matriz dinámica que almacena los proyectos. Limitada a 15 elementos para calcular el `InitSpace` y optimizar la renta de Solana.
 
-Ya con el repositorio en tu cuenta lo siguiente que debes hacer copiar el `enlace de tu repositorio`, lo que se puede hacer directamente desdel navegador:
+### Objeto Interno (`RegistroSemanal`)
+* **`proyecto`**: (String) Nombre del cliente o proyecto.
+* **`horas_dedicadas`**: (u8) Tipo de dato ligero que soporta hasta 255 horas.
+* **`pagado`**: (bool) Estado de facturación. Se inicializa en `false` por defecto al crear un registro para proteger la lógica de negocio.
 
-![repo](./images/repo.png)
-Posteriormente, lo uniremos con el siguiente enlace en nuestro navegador de preferencia:
+---
 
-```url
-https://beta.solpg.io/
-```
+## 🔄 Operaciones (CRUD)
 
-Lo que nos dará algo parecido a:
-
-![url](./images/url.png)
-
-Al pulsar enter seremos enviados al `Solana Playground` con nuestro proyecto abierto:
-
-![pg](./images/pg.png)
-
-Para guardarlo solo damos clic en el boton `import` y asignamos un nombre:
-
-![import](./images/import.png)
-
-## Preparacion del entorno
-
-Primero conectaremos el entorno con la devnet, lo que tambien procederá a la creación de una wallet. Para eso daremos clic en donde dice **Not Conected**:
-
-![playground1](./images/playground1.png)
-
-Saldrá la siguiente ventana donde daremos en el botón **Continue**:
-
-![wallet](./images/wallet.png)
-
-Como resultado se mostrará la siguiente información:
-
-![status](./images/status.png)
-
-* En verde: el estado de la conexión y el entorno al que se encuentra conectado
-
-* En amarillo: la la dirección de la wallet conectada
-
-* En azul: la cantidad de tokens en la wallet
-
-> ℹ️ ¿Quieres ver el ejemplo de un "Hola Mundo" en Solana?. Da clic aquí: 👉 [Ver Ejemplo](https://github.com/WayLearnLatam/Solana-starter-kit/tree/1fc6349ba63375a3fe223d8d56911bc64765459b/build-deploy)
-
-> ℹ️ ¿Cuentas con una Wallet de [Phantom](https://phantom.com/) que deseas importar?, Da clic aquí para ver como hacerlo: 
-
-👉 [Como Importar una Wallet](https://github.com/WayLearnLatam/Solana-starter-kit/tree/1fc6349ba63375a3fe223d8d56911bc64765459b/import-key-a-playground)
+| Función | Descripción de la Lógica |
+| :--- | :--- |
+| `inicializar_tracker` | Crea la PDA y asigna la propiedad de la cuenta al Signer. |
+| `registrar_horas` | Añade un proyecto y horas. Infiere automáticamente `pagado = false`. |
+| `editar_registro` | Permite sobrescribir las horas (si se trabajó más tiempo) o cambiar la bandera booleana a `true` al recibir el pago del cliente. |
+| `eliminar_registro` | Remueve un proyecto concluido del vector iterando mediante funciones nativas de Rust. |
+| `ver_registros` | Emite la bitácora completa a los logs On-Chain (`msg!`). |
